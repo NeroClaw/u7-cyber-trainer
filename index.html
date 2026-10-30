@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>U7 Cyber SLAM · Trainer de révision</title>
+<meta name="description" content="Trainer interactif pour l'épreuve U7 Cyber SLAM du BTS SIO : cours condensé, flashcards à rappel actif, ateliers de code SQL et PHP avec vérification, suivi de progression.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="U7 Cyber SLAM · Trainer de révision">
+<meta property="og:description" content="Cours, flashcards et ateliers de code SQL/PHP pour préparer l'épreuve U7 Cyber SLAM du 03/11/2026.">
+<meta property="og:url" content="https://neroclaw.github.io/u7-cyber-trainer/">
+<meta property="og:image" content="https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/school/default/24px.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#f7f2e8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Aller au contenu</a>
+
+<div class="app">
+  <aside class="side" id="side" aria-label="Navigation des sections">
+    <div class="side__brand">
+      <p class="side__kicker">BTS SIO · SLAM</p>
+      <p class="side__title">U7 Cyber</p>
+      <p class="side__sub">Épreuve du 03/11/2026 · 4 h · coef 4</p>
+    </div>
+
+    <div class="side__meter" aria-hidden="true">
+      <div class="meter">
+        <div class="meter__fill" id="meterFill"></div>
+      </div>
+      <p class="side__meter-label"><span id="meterText">0 %</span> du parcours</p>
+    </div>
+
+    <nav class="side__nav" id="nav"></nav>
+
+    <div class="side__foot">
+      <a class="side__link" href="#/revision">Révision mixte</a>
+      <a class="side__link" href="#/carnet">Mon carnet de code</a>
+      <button class="side__link side__link--btn" id="themeToggle" type="button">Thème sombre</button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <header class="topbar">
+      <button class="iconbtn" id="menuBtn" type="button" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="side">
+        <span class="iconbtn__bars" aria-hidden="true"></span>
+      </button>
+
+      <div class="topbar__title" id="crumb">Méthode</div>
+
+      <div class="chrono" role="group" aria-label="Chronomètre d'examen">
+        <span class="chrono__time" id="chronoTime">4:00:00</span>
+        <button class="chrono__btn" id="chronoStart" type="button">Démarrer</button>
+        <button class="chrono__btn chrono__btn--ghost" id="chronoReset" type="button">RAZ</button>
+      </div>
+    </header>
+
+    <div class="view" id="view" tabindex="-1">
+      <header class="sechead">
+        <span class="sechead__num">U7 · CYBER SLAM</span>
+        <h1>Trainer de révision U7 Cyber SLAM</h1>
+        <p style="color: var(--ink-2)">Chargement des sections…</p>
+      </header>
+      <noscript>
+        <p>Ce trainer a besoin de JavaScript pour fonctionner. Autorise-le pour cet appareil, puis recharge la page.</p>
+      </noscript>
+    </div>
+
+    <footer class="foot">
+      <p>Fiche source : <em>Fiche de révision U7 Cyber SLAM</em>, construite sur les 9 sujets SLAM 2022 à 2026. Progression stockée en local sur cet appareil.</p>
+    </footer>
+  </main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
