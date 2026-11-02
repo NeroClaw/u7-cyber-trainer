@@ -205,7 +205,10 @@ function valideMotDePasse(string $mdp): bool {
     { id: "a7", q: "Comment implémenter l'interdiction de réutiliser les 3 derniers mots de passe ?", a: "Table <code>historique_mdp(id, id_utilisateur, hash, date_creation)</code>, comparaison du nouveau mot de passe avec <code>password_verify</code> sur les 3 derniers hashs, puis purge au-delà. Jamais de comparaison directe <code>WHERE mdp = :nouveau</code>, le sel rend chaque hash unique." },
     { id: "a8", q: "Mot de passe + question secrète, est-ce du 2FA ?", a: "<strong>Non.</strong> Les deux relèvent de \"ce que je sais\". Il faut deux catégories différentes : savoir + posséder, ou savoir + être." },
     { id: "a9", q: "Pourquoi un verrouillage temporaire plutôt que définitif ?", a: "Un verrouillage définitif permet à un attaquant de bloquer le compte d'un utilisateur légitime, donc un déni de service. 15 minutes suffisent à casser une attaque automatisée." },
-    { id: "a10", q: "Quel est le risque de l'énumération des comptes ?", a: "Un message d'erreur différent selon que le login existe ou non permet de cartographier les comptes. La bonne pratique est un message générique du type \"identifiants incorrects\"." }
+    { id: "a10", q: "Quel est le risque de l'énumération des comptes ?", a: "Un message d'erreur différent selon que le login existe ou non permet de cartographier les comptes. La bonne pratique est un message générique du type \"identifiants incorrects\"." },
+    { id: "a11", q: "Pourquoi le 2FA par SMS est-il le plus faible des seconds facteurs ?", a: "Le code transite par le réseau téléphonique : il est vulnérable au <strong>SIM swapping</strong> (portage frauduleux de la ligne), à l'interception et au phishing en temps réel. Il reste infiniment mieux que rien, mais TOTP ou FIDO2 sont préférables." },
+    { id: "a12", q: "TOTP ou clé FIDO2 : lequel résiste au phishing ?", a: "<strong>FIDO2</strong> (clé de sécurité, WebAuthn). La signature est liée au domaine qui la demande : sur un faux site, la clé refuse. Un code TOTP, lui, peut être saisi par la victime sur une page d'hameçonnage puis rejoué dans les 30 secondes." },
+    { id: "a13", q: "Qu'est-ce que le MFA fatigue (push bombing) et comment s'en protéger ?", a: "L'attaquant envoie des dizaines de notifications push jusqu'à ce que la victime valide par agacement. Parades : <strong>number matching</strong> (saisir le numéro affiché), limitation du nombre de tentatives, alerte sur tentatives répétées, blocage temporaire du compte." }
   ],
   ateliers: [
     {
@@ -1542,7 +1545,24 @@ Referrer-Policy              limite les fuites d'URL vers les sites tiers</code>
     <p>"Le pare-feu ne protège pas de cette attaque : la requête est légitime au niveau réseau. La correction est applicative." Cette phrase vaut souvent plus que trois lignes de code.</p>
   </div>
 
-  <h2>10. Ce qu'on peut te demander</h2>
+  <h2>10. Chaîne d'approvisionnement, CVE et veille</h2>
+  <p>On n'est pas seulement attaquable par son propre code, mais par <strong>tout ce qu'on installe et par tous ceux qui ont un accès</strong>. Une attaque par la chaîne d'approvisionnement (<em>supply chain</em>) compromet un fournisseur pour atteindre ses clients : mise à jour piégée, dépendance malveillante, prestataire d'accès distant compromis.</p>
+  <ul>
+    <li><strong>SolarWinds (2020)</strong> : une mise à jour signée et distribuée par l'éditeur contenait une porte dérobée, déployée chez des milliers de clients.</li>
+    <li>Dépendance open source piégée : un contributeur prend la maintenance d'un paquet peu suivi, puis y insère du code malveillant. Les <em>lock files</em> et la signature des paquets limitent le risque, ils ne l'annulent pas.</li>
+  </ul>
+  <h3>Le vocabulaire de la veille</h3>
+  <ul>
+    <li><strong>CVE</strong> : identifiant public d'une vulnérabilité (<code>CVE-2021-44228</code> = Log4Shell). Une CVE est publiée, datée, rattachée à un produit et à des versions.</li>
+    <li><strong>CVSS</strong> : score de gravité de 0 à 10, calculé sur des critères objectifs (vecteur d'attaque, complexité, privilèges requis, impact sur confidentialité, intégrité, disponibilité).</li>
+    <li><strong>CERT-FR (ANSSI)</strong> : alertes et bulletins francophones. <strong>NVD</strong> : base américaine de référence.</li>
+  </ul>
+  <div class="callout callout--key">
+    <span class="callout__label">Le raisonnement attendu</span>
+    <p>Un CVE critique sur un composant installé mais <strong>non exposé</strong> n'est pas une urgence. La priorisation se fait sur le triptyque <strong>gravité × exposition × existence d'un exploit</strong>, pas sur le score seul. C'est exactement la logique d'une analyse de risques.</p>
+  </div>
+
+  <h2>11. Ce qu'on peut te demander</h2>
   <ul>
     <li>Lire un formulaire et dire si un jeton anti-CSRF est présent, et où il doit être vérifié.</li>
     <li>Dire pourquoi <code>/supprimer?id=42</code> en <code>GET</code> est dangereux, même avec une confirmation JavaScript.</li>
@@ -1565,7 +1585,10 @@ Referrer-Policy              limite les fuites d'URL vers les sites tiers</code>
     { id: "w11", q: "Un site importe des images depuis une URL fournie. Quelle attaque et quelle parade ?", a: "<strong>SSRF</strong> : l'attaquant vise <code>127.0.0.1</code>, le réseau interne ou <code>169.254.169.254</code> (métadonnées cloud). Parade : liste blanche de domaines et de schémas, pas une blacklist d'IP." },
     { id: "w12", q: "Comment sécuriser <code>include $_GET['page']</code> ?", a: "<code>basename()</code> puis <strong>liste blanche</strong> des pages autorisées, et <code>realpath()</code> vérifié comme préfixé par le dossier attendu. Un <code>str_replace('../','')</code> se contourne." },
     { id: "w13", q: "Trois règles pour un upload de fichier ?", a: "Vérifier l'extension <em>et</em> le type réel avec <code>finfo</code>, renommer côté serveur, stocker hors de la racine web avec exécution PHP désactivée." },
-    { id: "w14", q: "Un clic sur un lien piégé peut-il être bloqué par le pare-feu ?", a: "<strong>Non.</strong> La requête est légitime au niveau réseau. Seule une mesure applicative la bloque : jeton anti-CSRF, échappement, liste blanche. Le pare-feu ne lit pas le contenu." }
+    { id: "w14", q: "Un clic sur un lien piégé peut-il être bloqué par le pare-feu ?", a: "<strong>Non.</strong> La requête est légitime au niveau réseau. Seule une mesure applicative la bloque : jeton anti-CSRF, échappement, liste blanche. Le pare-feu ne lit pas le contenu." },
+    { id: "w15", q: "Qu'est-ce qu'une attaque par chaîne d'approvisionnement ?", a: "Compromettre un <strong>fournisseur</strong> pour atteindre ses clients : mise à jour piégée (SolarWinds), dépendance open source malveillante, prestataire d'accès distant compromis. La victime installe l'attaque elle-même, en toute confiance." },
+    { id: "w16", q: "Différence entre CVE et CVSS ?", a: "<strong>CVE</strong> = l'identifiant public d'une vulnérabilité précise (produit, versions). <strong>CVSS</strong> = le score de gravité de 0 à 10 qui la caractérise. Un CVE critique peut avoir un CVSS de 9,8, mais rester inexploitable chez toi si le service n'est pas exposé." },
+    { id: "w17", q: "Un correctif critique sort pour un composant installé mais non exposé. Urgence ?", a: "<strong>Non, pas au sens de l'astreinte.</strong> On priorise gravité <em>et</em> exposition <em>et</em> existence d'un exploit. On planifie le correctif dans le cycle normal, on documente la décision, on surveille. Corriger partout en urgence sans discernement, c'est du bruit." }
   ],
   ateliers: [
     {
